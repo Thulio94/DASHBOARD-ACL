@@ -345,7 +345,7 @@ function App() {
 
             <Card className="bg-white shadow-sm hover:shadow-md transition-shadow">
               <CardHeader>
-                <CardTitle className="text-green-600">Clientes a Vencer</CardTitle>
+                <CardTitle className="text-green-600">Faturas a Vencer</CardTitle>
               </CardHeader>
               <CardContent>
                 <p className="text-3xl font-bold text-green-600">{clientesAVencer}</p>
@@ -354,7 +354,7 @@ function App() {
 
             <Card className="bg-white shadow-sm hover:shadow-md transition-shadow">
               <CardHeader>
-                <CardTitle className="text-red-600">Clientes em Atraso</CardTitle>
+                <CardTitle className="text-red-600">Faturas em Atraso</CardTitle>
               </CardHeader>
               <CardContent>
                 <p className="text-3xl font-bold text-red-600">{clientesEmAtraso}</p>
