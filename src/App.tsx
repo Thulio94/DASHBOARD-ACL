@@ -39,6 +39,7 @@ interface FaturaAgrupada {
   DOCUMENTO_CLIENTE: string;
   NOME_CLIENTE: string;
   "MÊS REFERENCIA": string;
+  TIPO_MOVIMENTO: string;
   faturas: {
     [key: string]: number;
   };
@@ -62,13 +63,15 @@ function App() {
   // Função para agrupar dados por cliente e fatura
   const agruparDadosPorFatura = (dados: Cliente[]): FaturaAgrupada[] => {
     const agrupado = dados.reduce((acc: { [key: string]: FaturaAgrupada }, item) => {
-      const chave = `${item.DOCUMENTO_CLIENTE}-${item["MÊS REFERENCIA"]}`
+      // Chave única para cada combinação de cliente, mês e tipo de movimento
+      const chave = `${item.DOCUMENTO_CLIENTE}-${item["MÊS REFERENCIA"]}-${item.TIPO_MOVIMENTO}`
       
       if (!acc[chave]) {
         acc[chave] = {
           DOCUMENTO_CLIENTE: item.DOCUMENTO_CLIENTE,
           NOME_CLIENTE: item.NOME_CLIENTE,
           "MÊS REFERENCIA": item["MÊS REFERENCIA"],
+          TIPO_MOVIMENTO: item.TIPO_MOVIMENTO,
           faturas: {}
         }
       }
@@ -179,7 +182,13 @@ function App() {
   // Obter valores únicos para os filtros
   const uniqueMovementTypes = Array.from(new Set(data.map(item => item.TIPO_MOVIMENTO))).filter(Boolean)
   const uniqueYears = Array.from(new Set(data.map(item => item["ANO REFERENCIA"]))).filter(Boolean)
-  const uniqueMonths = Array.from(new Set(data.map(item => item["MÊS REFERENCIA"]))).filter(Boolean)
+  const mesesOrdem = [
+    'JANEIRO', 'FEVEREIRO', 'MARÇO', 'ABRIL', 'MAIO', 'JUNHO',
+    'JULHO', 'AGOSTO', 'SETEMBRO', 'OUTUBRO', 'NOVEMBRO', 'DEZEMBRO'
+  ]
+  const uniqueMonths = Array.from(new Set(data.map(item => item["MÊS REFERENCIA"])))
+    .filter(Boolean)
+    .sort((a, b) => mesesOrdem.indexOf(a) - mesesOrdem.indexOf(b))
 
   // Filtrar dados com validação adicional
   const filteredData = data.filter(item => {
@@ -212,10 +221,14 @@ function App() {
 
   // Métricas para os novos cards de faturas
   const dadosFaturasCards = agruparDadosPorFatura(filteredData)
-  const fatura0Count = dadosFaturasCards.filter(item => (item.faturas['0'] || 0) > 0).length
-  const fatura1Count = dadosFaturasCards.filter(item => (item.faturas['1'] || 0) > 0).length
-  const fatura2Count = dadosFaturasCards.filter(item => (item.faturas['2'] || 0) > 0).length
-  const fatura3Count = dadosFaturasCards.filter(item => (item.faturas['3'] || 0) > 0).length
+  const fatura0Count = dadosFaturasCards.filter(item => (item.faturas['0'] || 0) > 0)
+    .map(item => `${item.DOCUMENTO_CLIENTE}-${item.TIPO_MOVIMENTO}`).length
+  const fatura1Count = dadosFaturasCards.filter(item => (item.faturas['1'] || 0) > 0)
+    .map(item => `${item.DOCUMENTO_CLIENTE}-${item.TIPO_MOVIMENTO}`).length
+  const fatura2Count = dadosFaturasCards.filter(item => (item.faturas['2'] || 0) > 0)
+    .map(item => `${item.DOCUMENTO_CLIENTE}-${item.TIPO_MOVIMENTO}`).length
+  const fatura3Count = dadosFaturasCards.filter(item => (item.faturas['3'] || 0) > 0)
+    .map(item => `${item.DOCUMENTO_CLIENTE}-${item.TIPO_MOVIMENTO}`).length
 
   // Reset página ao mudar filtros
   useEffect(() => {
@@ -235,21 +248,70 @@ function App() {
     const dadosAgrupados = agruparDadosPorFatura(filteredData)
       .filter(item => Object.values(item.faturas).some(valor => valor > 0))
     
-    // Criar CSV
-    const headers = ['Documento', 'Nome do Cliente', 'Mês de Referência', 
-                    'Fatura 0', 'Valor Fatura 0',
-                    'Fatura 1', 'Valor Fatura 1',
-                    'Fatura 2', 'Valor Fatura 2',
-                    'Fatura 3', 'Valor Fatura 3']
+    // Agrupar por cliente e mês
+    const dadosConsolidados = dadosAgrupados.reduce((acc: any[], item) => {
+      const chave = `${item.DOCUMENTO_CLIENTE}-${item["MÊS REFERENCIA"]}`
+      const index = acc.findIndex(i => 
+        i.DOCUMENTO_CLIENTE === item.DOCUMENTO_CLIENTE && 
+        i["MÊS REFERENCIA"] === item["MÊS REFERENCIA"]
+      )
+
+      if (index === -1) {
+        // Criar novo registro
+        acc.push({
+          DOCUMENTO_CLIENTE: item.DOCUMENTO_CLIENTE,
+          NOME_CLIENTE: item.NOME_CLIENTE,
+          "MÊS REFERENCIA": item["MÊS REFERENCIA"],
+          faturas: {
+            "0": { FIXA: 0, MOVEL: 0 },
+            "1": { FIXA: 0, MOVEL: 0 },
+            "2": { FIXA: 0, MOVEL: 0 },
+            "3": { FIXA: 0, MOVEL: 0 }
+          }
+        })
+      }
+
+      const currentIndex = index === -1 ? acc.length - 1 : index
+      
+      // Atualizar valores das faturas
+      Object.entries(item.faturas).forEach(([fatura, valor]) => {
+        if (item.TIPO_MOVIMENTO.includes('FIXA')) {
+          acc[currentIndex].faturas[fatura].FIXA = valor
+        } else if (item.TIPO_MOVIMENTO.includes('MOVEL')) {
+          acc[currentIndex].faturas[fatura].MOVEL = valor
+        }
+      })
+
+      return acc
+    }, [])
     
-    const csvData = dadosAgrupados.map(cliente => [
+    // Criar CSV
+    const headers = [
+      'Documento',
+      'Nome do Cliente',
+      'Mês de Referência',
+      'Fatura 0 - Fixa',
+      'Fatura 0 - Móvel',
+      'Fatura 1 - Fixa',
+      'Fatura 1 - Móvel',
+      'Fatura 2 - Fixa',
+      'Fatura 2 - Móvel',
+      'Fatura 3 - Fixa',
+      'Fatura 3 - Móvel'
+    ]
+    
+    const csvData = dadosConsolidados.map(cliente => [
       cliente.DOCUMENTO_CLIENTE,
       cliente.NOME_CLIENTE,
       cliente["MÊS REFERENCIA"],
-      '0', cliente.faturas['0'] || 0,
-      '1', cliente.faturas['1'] || 0,
-      '2', cliente.faturas['2'] || 0,
-      '3', cliente.faturas['3'] || 0
+      cliente.faturas['0'].FIXA || 0,
+      cliente.faturas['0'].MOVEL || 0,
+      cliente.faturas['1'].FIXA || 0,
+      cliente.faturas['1'].MOVEL || 0,
+      cliente.faturas['2'].FIXA || 0,
+      cliente.faturas['2'].MOVEL || 0,
+      cliente.faturas['3'].FIXA || 0,
+      cliente.faturas['3'].MOVEL || 0
     ])
 
     const csvContent = [headers, ...csvData]
@@ -285,7 +347,7 @@ function App() {
           <img 
             src="/acl-telecom-logo.png" 
             alt="ACL Telecom" 
-            className="h-16 object-contain"
+            className="h-32 object-contain"
           />
         </div>
         
@@ -424,80 +486,93 @@ function App() {
             </Button>
           </div>
 
-          {/* Tabela de Clientes */}
-          <div className="bg-white rounded-lg shadow-sm">
-            <Table>
-              <TableHeader>
-                <TableRow className="bg-gray-50">
-                  <TableHead className="text-[#005B9C]">CNPJ</TableHead>
-                  <TableHead className="text-[#005B9C]">Nome do Cliente</TableHead>
-                  <TableHead className="text-[#005B9C]">Tipo de Movimento</TableHead>
-                  <TableHead className="text-[#005B9C]">Dias em Atraso</TableHead>
-                  <TableHead className="text-[#005B9C]">Valor Final</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {loading ? (
-                  <TableRow>
-                    <TableCell colSpan={5} className="text-center">Carregando...</TableCell>
-                  </TableRow>
-                ) : paginatedData.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={5} className="text-center">Nenhum resultado encontrado</TableCell>
-                  </TableRow>
-                ) : (
-                  paginatedData.map((item, index) => (
-                    <TableRow key={index}>
-                      <TableCell>{item.DOCUMENTO_CLIENTE}</TableCell>
-                      <TableCell>{item.NOME_CLIENTE}</TableCell>
-                      <TableCell>{item.TIPO_MOVIMENTO}</TableCell>
-                      <TableCell>{item["DIAS EM ATRASO"] || "-"}</TableCell>
-                      <TableCell>R$ {item.VALOR_FINAL.toFixed(2)}</TableCell>
+          {/* Container para as duas tabelas */}
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
+            {/* Tabela de Clientes */}
+            <div className="bg-white rounded-lg shadow-sm">
+              <div className="p-4 border-b">
+                <h3 className="text-lg font-semibold text-[#005B9C]">Clientes</h3>
+              </div>
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-gray-50">
+                      <TableHead className="text-[#005B9C]">CNPJ</TableHead>
+                      <TableHead className="text-[#005B9C]">Nome do Cliente</TableHead>
+                      <TableHead className="text-[#005B9C]">Tipo de Movimento</TableHead>
+                      <TableHead className="text-[#005B9C]">Dias em Atraso</TableHead>
+                      <TableHead className="text-[#005B9C]">Valor Final</TableHead>
                     </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
-          </div>
+                  </TableHeader>
+                  <TableBody>
+                    {loading ? (
+                      <TableRow>
+                        <TableCell colSpan={5} className="text-center">Carregando...</TableCell>
+                      </TableRow>
+                    ) : paginatedData.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={5} className="text-center">Nenhum resultado encontrado</TableCell>
+                      </TableRow>
+                    ) : (
+                      paginatedData.map((item, index) => (
+                        <TableRow key={index}>
+                          <TableCell>{item.DOCUMENTO_CLIENTE}</TableCell>
+                          <TableCell>{item.NOME_CLIENTE}</TableCell>
+                          <TableCell>{item.TIPO_MOVIMENTO}</TableCell>
+                          <TableCell>{item["DIAS EM ATRASO"] || "-"}</TableCell>
+                          <TableCell>R$ {item.VALOR_FINAL.toFixed(2)}</TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            </div>
 
-          {/* Tabela de Faturas */}
-          <div className="bg-white rounded-lg shadow-sm">
-            <Table>
-              <TableHeader>
-                <TableRow className="bg-gray-50">
-                  <TableHead className="text-[#005B9C]">CNPJ</TableHead>
-                  <TableHead className="text-[#005B9C]">Nome do Cliente</TableHead>
-                  <TableHead className="text-[#005B9C]">Mês Referência</TableHead>
-                  <TableHead className="text-[#005B9C]">Fatura 0</TableHead>
-                  <TableHead className="text-[#005B9C]">Fatura 1</TableHead>
-                  <TableHead className="text-[#005B9C]">Fatura 2</TableHead>
-                  <TableHead className="text-[#005B9C]">Fatura 3</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {loading ? (
-                  <TableRow>
-                    <TableCell colSpan={7} className="text-center">Carregando...</TableCell>
-                  </TableRow>
-                ) : paginatedFaturas.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={7} className="text-center">Nenhum resultado encontrado</TableCell>
-                  </TableRow>
-                ) : (
-                  paginatedFaturas.map((item, index) => (
-                    <TableRow key={index}>
-                      <TableCell>{item.DOCUMENTO_CLIENTE}</TableCell>
-                      <TableCell>{item.NOME_CLIENTE}</TableCell>
-                      <TableCell>{item["MÊS REFERENCIA"]}</TableCell>
-                      <TableCell>R$ {(item.faturas['0'] || 0).toFixed(2)}</TableCell>
-                      <TableCell>R$ {(item.faturas['1'] || 0).toFixed(2)}</TableCell>
-                      <TableCell>R$ {(item.faturas['2'] || 0).toFixed(2)}</TableCell>
-                      <TableCell>R$ {(item.faturas['3'] || 0).toFixed(2)}</TableCell>
+            {/* Tabela de Faturas */}
+            <div className="bg-white rounded-lg shadow-sm">
+              <div className="p-4 border-b">
+                <h3 className="text-lg font-semibold text-[#005B9C]">Faturas</h3>
+              </div>
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-gray-50">
+                      <TableHead className="text-[#005B9C]">CNPJ</TableHead>
+                      <TableHead className="text-[#005B9C]">Nome do Cliente</TableHead>
+                      <TableHead className="text-[#005B9C]">Mês Referência</TableHead>
+                      <TableHead className="text-[#005B9C]">Fatura 0</TableHead>
+                      <TableHead className="text-[#005B9C]">Fatura 1</TableHead>
+                      <TableHead className="text-[#005B9C]">Fatura 2</TableHead>
+                      <TableHead className="text-[#005B9C]">Fatura 3</TableHead>
                     </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
+                  </TableHeader>
+                  <TableBody>
+                    {loading ? (
+                      <TableRow>
+                        <TableCell colSpan={7} className="text-center">Carregando...</TableCell>
+                      </TableRow>
+                    ) : paginatedFaturas.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={7} className="text-center">Nenhum resultado encontrado</TableCell>
+                      </TableRow>
+                    ) : (
+                      paginatedFaturas.map((item, index) => (
+                        <TableRow key={index}>
+                          <TableCell>{item.DOCUMENTO_CLIENTE}</TableCell>
+                          <TableCell>{item.NOME_CLIENTE}</TableCell>
+                          <TableCell>{item["MÊS REFERENCIA"]}</TableCell>
+                          <TableCell>R$ {(item.faturas['0'] || 0).toFixed(2)}</TableCell>
+                          <TableCell>R$ {(item.faturas['1'] || 0).toFixed(2)}</TableCell>
+                          <TableCell>R$ {(item.faturas['2'] || 0).toFixed(2)}</TableCell>
+                          <TableCell>R$ {(item.faturas['3'] || 0).toFixed(2)}</TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            </div>
           </div>
 
           {/* Paginação */}
